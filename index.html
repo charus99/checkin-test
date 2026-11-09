@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Check-in GPS Test</title>
+<style>
+  :root {
+    --bg:#f3f5f7; --card:#ffffff; --fg:#14202b; --muted:#5b6b78; --line:#dde3e8;
+    --accent:#0b6bcb; --good:#178a4c; --warn:#b7791f; --bad:#c53030;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f151b; --card:#17212a; --fg:#e6edf3; --muted:#93a4b3; --line:#26333f;
+      --accent:#4ea1ff; --good:#3ecf7e; --warn:#f0b54a; --bad:#ff6b6b; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+    padding: 20px max(16px, env(safe-area-inset-left)) 40px max(16px, env(safe-area-inset-right)); }
+  main { max-width: 560px; margin: 0 auto; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 0; font-size: 13px; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .clock { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .5px; }
+  .date { color: var(--muted); font-size: 13px; }
+  .row { display:flex; gap:10px; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 14px 18px; cursor:pointer; flex:1; min-width: 130px; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .in  { background: var(--good); color:#fff; }
+  .out { background: var(--bad);  color:#fff; }
+  .ghost { background: transparent; color: var(--accent); border:1px solid var(--line); flex: 0 0 auto; min-width: 0; padding: 8px 12px; font-size: 13px; }
+  button:disabled { opacity: .5; cursor: progress; }
+  .status { font-size: 14px; color: var(--muted); min-height: 1.5em; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar > i { display:block; height:100%; width:0; background: var(--accent); transition: width .2s linear; }
+  dl { display:grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+  dt { color: var(--muted); font-size: 13px; }
+  dd { margin:0; font-variant-numeric: tabular-nums; word-break: break-all; }
+  .pill { display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color:#fff; }
+  .p-good{background:var(--good)} .p-warn{background:var(--warn)} .p-bad{background:var(--bad)}
+  a { color: var(--accent); }
+  table { width:100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align:left; padding: 6px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 0; }
+  .err { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Check-in GPS Test</h1>
+    <p class="sub">เก็บพิกัด 10 วินาที แล้วเลือกค่าที่ accuracy ดีที่สุด</p>
+  </div>
+
+  <section class="card">
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="date" id="date"></div>
+  </section>
+
+  <section class="card" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row">
+      <button class="in" id="btnIn">Check-in</button>
+      <button class="out" id="btnOut">Check-out</button>
+    </div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="status" id="status">กดปุ่มเพื่อเริ่มวัดตำแหน่ง</div>
+  </section>
+
+  <section class="card" id="resultCard" hidden>
+    <h2>ผลล่าสุด</h2>
+    <dl id="result"></dl>
+    <div class="row" style="margin-top:12px">
+      <a id="mapLink" target="_blank" rel="noopener">เปิดใน Google Maps</a>
+    </div>
+  </section>
+
+  <section class="card" id="readCard" hidden>
+    <h2>ค่าที่อ่านได้ระหว่างวัด</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>วินาที</th><th>accuracy (ม.)</th><th>lat</th><th>lng</th></tr></thead>
+      <tbody id="reads"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="logCard" hidden>
+    <div class="row" style="align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h2 style="margin:0">ประวัติในรอบนี้</h2>
+      <button class="ghost" id="btnCopy">Copy CSV</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>ประเภท</th><th>เวลา</th><th>lat, lng</th><th>±ม.</th><th>แหล่ง</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>อ่านผล accuracy</h2>
+    <p class="hint">
+      <span class="pill p-good">≤ 20 ม.</span> น่าจะมาจาก GPS<br>
+      <span class="pill p-warn">20–150 ม.</span> น่าจะมาจาก WiFi scan หรือ GPS ในตึก<br>
+      <span class="pill p-bad">&gt; 150 ม.</span> น่าจะมาจาก Cell site หรือ IP<br><br>
+      ลองเทียบระหว่างเปิดกับปิด WiFi และระหว่างในตึกกับข้างนอก
+    </p>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SAMPLE_MS = 10000;
+const log = [];
+
+function tick() {
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString('th-TH', { hour12: false });
+  $('date').textContent = d.toLocaleDateString('th-TH', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+tick(); setInterval(tick, 1000);
+
+function sourceGuess(acc) {
+  if (acc <= 20)  return ['GPS', 'p-good'];
+  if (acc <= 150) return ['WiFi / GPS ในตึก', 'p-warn'];
+  return ['Cell / IP', 'p-bad'];
+}
+
+function netType() {
+  const c = navigator.connection;
+  if (!c) return 'ไม่ทราบ (iOS ไม่เปิดให้อ่าน)';
+  return [c.type, c.effectiveType].filter(Boolean).join(' / ') || 'ไม่ทราบ';
+}
+
+function setBusy(b) { $('btnIn').disabled = b; $('btnOut').disabled = b; }
+
+function measure(kind) {
+  if (!('geolocation' in navigator)) { $('status').innerHTML = '<span class="err">browser นี้ไม่รองรับ Geolocation</span>'; return; }
+  if (!window.isSecureContext) { $('status').innerHTML = '<span class="err">ต้องเปิดผ่าน HTTPS เท่านั้น</span>'; return; }
+
+  setBusy(true);
+  const reads = [];
+  const t0 = performance.now();
+  const clickedAt = new Date();
+  $('reads').innerHTML = '';
+  $('readCard').hidden = false;
+  $('status').textContent = 'กำลังขอตำแหน่ง… (ถ้ามีหน้าต่างขอสิทธิ์ ให้กดอนุญาต)';
+
+  const prog = setInterval(() => {
+    const p = Math.min(100, (performance.now() - t0) / SAMPLE_MS * 100);
+    $('prog').style.width = p + '%';
+  }, 100);
+
+  const wid = navigator.geolocation.watchPosition(pos => {
+    const c = pos.coords;
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    reads.push({ pos, sec });
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${reads.length}</td><td>${sec}</td><td>${c.accuracy.toFixed(0)}</td><td>${c.latitude.toFixed(6)}</td><td>${c.longitude.toFixed(6)}</td>`;
+    $('reads').appendChild(tr);
+    const best = Math.min(...reads.map(r => r.pos.coords.accuracy));
+    $('status').textContent = `ได้ ${reads.length} ค่า · ดีที่สุดตอนนี้ ±${best.toFixed(0)} ม.`;
+  }, err => {
+    const msg = { 1: 'ไม่ได้รับอนุญาต — เปิดสิทธิ์ Location ให้ browser แล้วลองใหม่',
+                  2: 'หาตำแหน่งไม่ได้ — ลองเปิด Location / WiFi',
+                  3: 'หมดเวลา' }[err.code] || err.message;
+    $('status').innerHTML = `<span class="err">${msg}</span>`;
+    if (err.code === 1) finish(true);
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: SAMPLE_MS });
+
+  const timer = setTimeout(() => finish(false), SAMPLE_MS);
+
+  function finish(aborted) {
+    clearTimeout(timer); clearInterval(prog);
+    navigator.geolocation.clearWatch(wid);
+    $('prog').style.width = '100%';
+    setBusy(false);
+    if (aborted) return;
+    if (!reads.length) { $('status').innerHTML = '<span class="err">ไม่ได้ค่าพิกัดเลยใน 10 วินาที</span>'; return; }
+
+    const best = reads.reduce((a, b) => b.pos.coords.accuracy < a.pos.coords.accuracy ? b : a);
+    const c = best.pos.coords;
+    const [src, cls] = sourceGuess(c.accuracy);
+    const latlng = `${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)}`;
+
+    $('result').innerHTML = `
+      <dt>ประเภท</dt><dd>${kind}</dd>
+      <dt>เวลากด</dt><dd>${clickedAt.toLocaleString('th-TH', { hour12:false })}</dd>
+      <dt>พิกัด</dt><dd>${latlng}</dd>
+      <dt>Accuracy</dt><dd>±${c.accuracy.toFixed(1)} ม. <span class="pill ${cls}">${src}</span></dd>
+      <dt>ได้ค่าที่</dt><dd>วินาทีที่ ${best.sec} (จาก ${reads.length} ค่า)</dd>
+      <dt>ความสูง</dt><dd>${c.altitude != null ? c.altitude.toFixed(1) + ' ม.' + (c.altitudeAccuracy != null ? ' (±' + c.altitudeAccuracy.toFixed(0) + ')' : '') : '-'}</dd>
+      <dt>ความเร็ว</dt><dd>${c.speed != null ? (c.speed * 3.6).toFixed(1) + ' กม./ชม.' : '-'}</dd>
+      <dt>เครือข่าย</dt><dd>${netType()}</dd>`;
+    $('mapLink').href = `https://www.google.com/maps?q=${c.latitude},${c.longitude}`;
+    $('resultCard').hidden = false;
+    $('status').textContent = `${kind} สำเร็จ · ±${c.accuracy.toFixed(0)} ม.`;
+
+    log.unshift({ kind, time: clickedAt, lat: c.latitude, lng: c.longitude, acc: c.accuracy, src });
+    renderLog();
+  }
+}
+
+function renderLog() {
+  $('logCard').hidden = !log.length;
+  $('log').innerHTML = log.map(r =>
+    `<tr><td>${r.kind}</td><td>${r.time.toLocaleTimeString('th-TH',{hour12:false})}</td><td>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</td><td>${r.acc.toFixed(0)}</td><td>${r.src}</td></tr>`).join('');
+}
+
+$('btnIn').onclick  = () => measure('Check-in');
+$('btnOut').onclick = () => measure('Check-out');
+$('btnCopy').onclick = async () => {
+  const csv = 'type,time,lat,lng,accuracy_m,source\n' + log.map(r =>
+    [r.kind, r.time.toISOString(), r.lat, r.lng, r.acc.toFixed(1), r.src].join(',')).join('\n');
+  try { await navigator.clipboard.writeText(csv); $('btnCopy').textContent = 'Copied'; }
+  catch { $('btnCopy').textContent = 'Copy ไม่ได้'; }
+  setTimeout(() => $('btnCopy').textContent = 'Copy CSV', 1500);
+};
+</script>
+</body>
+</html>
